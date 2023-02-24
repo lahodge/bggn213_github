@@ -1,0 +1,210 @@
+---
+title: "Class5: Data Vis"
+format: html
+toc: true
+theme: cosmo
+---
+
+Code in ***bold*** is "\*\*\*" on either side of the word. You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+# Plotting in R
+
+```{r, warning=FALSE}
+library(ggplot2)
+library(tidyverse)
+theme_set(theme_bw())
+```
+
+```{r}
+head(cars, n = 5)
+# n is the number of rows to display
+```
+
+```{r, fig.height = 3, fig.width=5}
+plot(cars)
+```
+
+Adding packages: first need to install install.packages() then load with library()
+
+```{r, fig.height = 2.5, fig.width=4}
+ggplot(cars)
+```
+
+GGplot is more verbose than base R plot(), every ggplot needs at least 3 things:
+
+-   **data** = name of dataframe
+-   **aes** = how we want the data to map to the plot (within this we set the x, y, and anything we want to be dependent on a variable)
+-   **geom** = type of geometry to plot
+
+```{r, fig.height = 2.5, fig.width=4}
+ggplot(data = cars) + 
+  aes(x = speed, y = dist) +
+  geom_point()
+```
+
+```{r, fig.height = 3, fig.width=4}
+ggplot(data = cars) + 
+  aes(x = speed, y = dist) +
+  geom_point() + geom_smooth(se = FALSE, method = "lm")
+```
+
+# Gene Expression Data
+```{r}
+url <- "https://bioboot.github.io/bimm143_S20/class-material/up_down_expression.txt"
+genes <- read.delim(url)
+head(genes)
+```
+
+> Q. How many genes are in this dataset?
+
+```{r}
+nrow(genes)
+```
+## Inline code embedding
+
+There are `r nrow(genes)` genes in this dataset.
+
+```{r}
+ncol(genes)
+```
+```{r}
+colnames(genes)
+```
+```{r}
+round(table(genes$State)/nrow(genes) * 100, 2 )
+```
+
+```{r, fig.height = 3, fig.width=5}
+ggplot(data = genes) + 
+  aes(x = Condition1, y = Condition2) + 
+  geom_point()
+```
+
+```{r, fig.height = 3, fig.width=5}
+gene_plot <- ggplot(data = genes) + 
+  aes(x = Condition1, y = Condition2, color = State) + geom_point()
+gene_plot
+```
+
+```{r}
+gene_plot + 
+  scale_color_manual(values = c("blue", "grey", "red")) + 
+  labs(title = "Gene Expression Changes Upon Drug Treatment") + xlab("Condition 1") + ylab("Condition 2")
+```
+
+# Gapminder data
+
+```{r}
+library(gapminder)
+library(dplyr)
+```
+
+```{r}
+gapminder2007 <- gapminder %>% filter(year == 2007)
+```
+
+> Q2. How many countries? 
+
+```{r}
+length(unique(gapminder$country))
+```
+There are `r length(unique(gapminder$country))` countries in the gapminder dataset.
+
+```{r}
+range(gapminder$year)
+```
+> Q3. Country with smallest population?
+
+```{r}
+gapminder[which.min(gapminder$pop), 1]
+```
+
+## Plots
+
+```{r}
+ggplot(gapminder2007) + 
+  aes(x = gdpPercap, y = lifeExp, color = continent, size = pop) +
+  geom_point(alpha = 0.4)
+```
+
+```{r}
+ggplot(gapminder2007) + 
+  aes(x = gdpPercap, y = lifeExp, color = pop) +
+  geom_point(alpha = 0.8)
+```
+
+Fix the point size scaling to be accurate
+
+```{r}
+ggplot(gapminder2007) + 
+  aes(x = gdpPercap, y = lifeExp, size = pop) +
+  geom_point(alpha = 0.6) + scale_size_area(max_size = 10)
+```
+
+Plot for 1957
+
+```{r}
+gapminder1957 <- gapminder %>% filter(year == 1957)
+```
+
+```{r nameofcodechunk}
+ggplot(data = gapminder1957) + 
+  aes(x = gdpPercap, y = lifeExp, color = continent, size = pop) + 
+  geom_point(alpha = 0.7) + 
+  scale_size_area(max_size = 11)
+```
+
+Plot for both years: 
+
+```{r}
+head(gapminder)
+gapminder_1957_2007 <- gapminder %>% filter(year %in% c(1957, 2007))
+```
+
+```{r}
+ggplot(data = gapminder_1957_2007) + 
+  aes(x = gdpPercap, y = lifeExp, color = continent, size = pop) + 
+  geom_point(alpha = 0.7) + 
+  scale_size_area(max_size = 11) + facet_wrap(~ year) + 
+  labs(title = "Life Expectancy vs GDP per Capita") + 
+  xlab("GDP Per Capita") + 
+  ylab("Life Expectancy") 
+```
+
+## Label the biggest countries
+
+```{r}
+gapminder_labels <- gapminder_1957_2007 %>% dplyr::arrange(desc(pop)) %>% .[1:6, ]
+
+ggplot(data = gapminder_1957_2007) + 
+  aes(x = gdpPercap, y = lifeExp, color = continent, size = pop) + 
+  geom_point(alpha = 0.5) + 
+  scale_size_area(max_size = 11) + facet_wrap(~ year) + 
+  labs(title = "Life Expectancy vs GDP per Cap") + 
+  xlab("GDP Per Capita") + 
+  ylab("Life Expectancy") + geom_text(data = gapminder_labels , aes(label = country), size = 3, nudge_x = 10000, nudge_y = -2.0)
+```
+
+
+# Combining Plots
+
+```{r}
+library(patchwork)
+```
+```{r}
+p1 <- ggplot(mtcars) + geom_point(aes(mpg, disp))
+p2 <- ggplot(mtcars) + geom_boxplot(aes(gear, disp, group = gear))
+p3 <- ggplot(mtcars) + geom_smooth(aes(disp, qsec))
+p4 <- ggplot(mtcars) + geom_bar(aes(carb))
+```
+
+Combining the basic plots
+```{r}
+(p1 | p2 | p3 ) / p4
+```
+
