@@ -1,0 +1,66 @@
+---
+title: "class11"
+format: pdf
+---
+
+```{r}
+library(readxl)
+mxl_snp_var <- read.csv("373531-SampleGenotypes-Homo_sapiens_Variation_Sample_rs8067378.csv", sep = ",")
+```
+
+```{r}
+table(mxl_snp_var$Genotype..forward.strand.)
+```
+
+```{r}
+length(mxl_snp_var$Genotype..forward.strand.)
+```
+```{r}
+library(dplyr)
+counts <- count(mxl_snp_var, Genotype..forward.strand.)
+```
+
+> Q5. Proportion of the sample population with G|G:
+
+```{r}
+counts[4,2]/sum(counts[,2])
+```
+# Homework from 2/15/23
+
+```{r}
+snp_pop <- read.csv("snp_pop_exp.txt", sep = " ")
+```
+
+```{r}
+table(snp_pop$geno)
+```
+
+Plot the genotypes
+
+```{r}
+library(ggplot2)
+ggplot(data = snp_pop) + 
+  aes(x = geno, y = exp, group = geno, color = geno) + 
+  geom_boxplot(stat = "boxplot") + 
+  geom_jitter(alpha = 0.5, width = 0.2) +
+  theme_bw() + 
+  labs(title = "Expression levels of ORMDL3 by genotype of rs8067378", x = "Genotype", y = "Expression")
+```
+
+```{r}
+summary(snp_pop)
+```
+
+Getting the summary stats:
+
+```{r}
+inds <- snp_pop$geno == "A/G"
+```
+
+Above is a logical vector containing the SNP of choice (A/G)
+
+Stats for Expression for A/G SNP
+```{r}
+summary(snp_pop$exp[inds=="TRUE"])
+```
+Repeat above for A/A G/A and G/G

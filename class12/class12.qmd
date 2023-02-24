@@ -1,0 +1,353 @@
+---
+title: "class12_report"
+format: html
+---
+
+```{r, warning = FALSE}
+#| message = FALSE
+library(DESeq2)
+```
+
+```{r}
+counts <- read.csv("airway_scaledcounts.csv", row.names=1)
+metadata <-  read.csv("airway_metadata.csv")
+```
+
+> Q1. How many genes in the dataset?
+
+```{r}
+nrow(counts)
+```
+38694 genes
+
+> Q2. How many control cell lines?
+
+```{r}
+table(metadata$dex)
+```
+
+There are 4 control cell lines.
+
+```{r}
+control <- metadata[metadata[,"dex"]=="control",]
+control.counts <- counts[ ,control$id]
+control.mean <- rowSums( control.counts )/4 
+head(control.mean)
+```
+
+Same thing with Dplyr: 
+
+```{r, warning = FALSE}
+library(dplyr)
+control <- metadata %>% filter(dex=="control")
+control.counts <- counts %>% select(control$id) 
+control.mean <- rowSums(control.counts)/4
+head(control.mean)
+```
+
+> Q3. How would you make the above code in either approach more robust?
+
+```{r}
+control.mean <- rowSums(control.counts)/sum(metadata$dex == "control")
+head(control.mean)
+```
+
+> Q4. Follow the same procedure for the treated samples (i.e. calculate the mean per gene across drug treated samples and assign to a labeled vector called treated.mean)
+
+```{r}
+treated <- metadata %>% filter(dex=="treated")
+treated.counts <- counts %>% select(treated$id) 
+treated.mean <- rowSums(treated.counts)/sum(metadata$dex == "treated")
+head(treated.mean)
+```
+
+```{r}
+meancounts <- data.frame(control.mean, treated.mean)
+```
+
+```{r}
+library(ggplot2)
+ggplot(data = meancounts) + 
+  aes(x = control.mean, y = treated.mean) +
+  geom_point(alpha = 0.7) + 
+  theme_bw()
+```
+
+> Q6. Plotting In base R with log scale: 
+
+```{r}
+plot(control.mean, treated.mean, log = "xy")
+```
+
+Getting log2FC
+
+```{r}
+meancounts$log2fc <- log2(meancounts[,"treated.mean"]/meancounts[,"control.mean"])
+head(meancounts)
+```
+
+Fix the NaN's, etc. 
+
+```{r}
+zero.vals <- which(meancounts[,1:2]==0, arr.ind=TRUE)
+
+to.rm <- unique(zero.vals[,1])
+mycounts <- meancounts[-to.rm,]
+head(mycounts)
+```
+
+> Q7. What is the purpose of the arr.ind argument in the which() function call above? Why would we then take the first column of the output and need to call the unique() function?
+
+
+```{r}
+up.ind <- mycounts$log2fc > 2
+down.ind <- mycounts$log2fc < (-2)
+```
+
+> Q8. How many genes are upregulated Log2FC >2?
+
+```{r}
+sum(up.ind)
+```
+
+There are `r sum(up.ind)` genes with log2FC >2.
+
+> Q9. How many genes are downregulated log2FC <2?
+
+```{r}
+sum(down.ind)
+```
+> Q10. Do you trust these results?
+
+If we are asking whether these genes have a >2 log fold change? Yes, but we are more interested in whether the changes are statistically significant, so we need a statistical test.
+
+# Deseq2
+
+```{r}
+library(DESeq2)
+dds <- DESeqDataSetFromMatrix(countData=counts, 
+                              colData=metadata, 
+                              design=~dex)
+dds
+```
+
+```{r}
+#results(dds) this doesnt work
+dds <- DESeq(dds)
+```
+
+```{r}
+res <- results(dds)
+res
+```
+
+Convert to dataframe: 
+
+
+```{r}
+res <- as.data.frame(res)
+```
+
+```{r}
+summary(res)
+```
+
+```{r}
+res05 <- results(dds, alpha=0.05)
+summary(res05)
+```
+
+# Annotating
+
+```{r}
+# BiocManager::install("AnnotationDbi")
+# BiocManager::install("org.Hs.eg.db")
+library(org.Hs.eg.db)
+columns(org.Hs.eg.db)
+```
+
+```{r}
+res$symbol <- mapIds(org.Hs.eg.db, keys=row.names(res), keytype="ENSEMBL", column="SYMBOL", multiVals="first")
+```
+```{r}
+head(res)
+```
+
+Add Entrez, Uniprot ID and gene name: 
+
+```{r}
+res$entrez <- mapIds(org.Hs.eg.db, keys=row.names(res), keytype="ENSEMBL", column="ENTREZID", multiVals="first")
+
+res$uniprot <- mapIds(org.Hs.eg.db, keys=row.names(res), keytype="ENSEMBL", column="UNIPROT", multiVals="first")
+
+res$genename <- mapIds(org.Hs.eg.db, keys=row.names(res), keytype="ENSEMBL", column="GENENAME", multiVals="first")
+```
+Note from 2/22/23 add name to vector
+
+```{r}
+x <- c(barry = 1, sms = 5, chandra = 4)
+x
+
+# or names(x) <- c("barry", "sms", "chandra") does the same thing
+
+
+```
+
+```{r}
+ord <- order(res$padj)
+head(res[ord,])
+```
+
+Save results to csv file: 
+
+```{r}
+write.csv(res[ord,],"deseq_results.csv")
+```
+
+# Data Vis
+
+## Volcano Plot
+
+```{r}
+plot(res$log2FoldChange, -log(res$padj), xlab="Log2(FoldChange)", ylab="-Log(P-value)")
+```
+
+Labels in Base R
+
+```{r}
+plot(res$log2FoldChange, -log(res$padj), 
+ ylab="-Log(P-value)", xlab="Log2(FoldChange)")
+```
+
+```{r}
+plot(res$log2FoldChange, -log(res$padj), ylab="-Log(P-value)", xlab="Log2(FoldChange)") + abline(v=c(-2,2), col="darkgray", lty=2) +
+abline(h=-log(0.05), col="darkgray", lty=2)
+```
+
+```{r}
+mycols <- rep("gray", nrow(res))
+mycols[abs(res$log2FoldChange) > 2]  <- "red" 
+
+inds <- (res$padj < 0.01) & (abs(res$log2FoldChange) > 2 )
+mycols[inds] <- "blue"
+  
+plot( res$log2FoldChange, -log(res$padj), col=mycols, ylab="-Log(P-value)", xlab="Log2(FoldChange)" ) + abline(v=c(-2,2), col="gray", lty=2) + abline(h=-log(0.1), col="gray", lty=2)
+```
+
+## Using EnhanceVolcano
+
+```{r}
+library(EnhancedVolcano)
+```
+
+```{r}
+x <- as.data.frame(res)
+EnhancedVolcano(x, lab = x$symbol, x = 'log2FoldChange', y = 'pvalue')
+```
+
+# Pathway Analysis
+
+```{r}
+#| message: false
+# first installed from Bioconductor with BiocManager::install()
+library(pathview)
+library(gage)
+library(gageData)
+```
+
+```{r}
+data(kegg.gs)
+
+gs <- gage(foldchange, gsets = kegg.gs)
+```
+
+See whats in the output object with attributes
+
+```{r}
+attributes(gs)
+```
+
+
+
+```{r}
+data(kegg.sets.hs)
+head(kegg.sets.hs, 2)
+```
+
+Make new vector fold changes, add names
+
+```{r}
+foldchanges = res$log2FoldChange
+names(foldchanges) = res$entrez # add entrez id names to foldchange vector
+head(foldchanges)
+```
+
+## Gage pathway analysis
+
+```{r}
+keggres = gage(foldchanges, gsets=kegg.sets.hs)
+```
+
+```{r}
+attributes(keggres)
+```
+```{r}
+head(keggres$less, 3)
+```
+
+Pathview for Asthma:
+
+```{r}
+pathview(gene.data=foldchanges, pathway.id="hsa05310")
+```
+
+Embed image: 
+
+![](hsa05310.pathview.png)
+
+```{r}
+pathview(gene.data=foldchanges, pathway.id="hsa05310", kegg.native=FALSE)
+```
+
+> Q12. 
+
+Top downregulated pathway: 
+```{r}
+pathview(gene.data=foldchanges, pathway.id="hsa05332", kegg.native=FALSE)
+```
+Second most down-regulated pathway
+
+```{r}
+pathview(gene.data=foldchanges, pathway.id="hsa04940", kegg.native=FALSE)
+```
+
+# Optional
+
+```{r}
+i <- grep("CRISPLD2", res$symbol)
+res[i,]
+```
+```{r}
+rownames(res[i,])
+```
+
+```{r}
+plotCounts(dds, gene="ENSG00000103196", intgroup="dex")
+```
+
+```{r}
+# Return the data
+d <- plotCounts(dds, gene="ENSG00000103196", intgroup="dex", returnData=TRUE)
+head(d)
+```
+
+GGplot
+
+```{r}
+ggplot(d, aes(dex, count, fill=dex)) + geom_boxplot() + scale_y_log10() + ggtitle("CRISPLD2") + theme_bw()
+```
+
+```{r}
+sessionInfo()
+```
+
