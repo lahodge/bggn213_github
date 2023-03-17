@@ -1,0 +1,280 @@
+---
+title: "lab7_Lauren"
+format: html
+author: Lauren PID A53280444
+toc: true
+---
+
+# Class 7: Unsupervised Learning and Dimensional Reduction
+
+Setup
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+theme_set(theme_bw())
+```
+
+Setup random data: normally distributed
+```{r}
+hist(rnorm(300000, mean = -3))
+```
+I want a small vector of 30 points, 2 groupings inside.
+```{r}
+rnorm(30, mean = -3)
+```
+More points centered at +3
+```{r}
+rnorm(30, 3)
+```
+Put both into 1 vector
+```{r}
+temp <- c(rnorm(30, -3), rnorm(30, 3))
+```
+Make dataframe where x = -3 numbers then + 3 numbers, y is reverse order
+```{r}
+x <- data.frame(x = temp, y = rev(temp))
+head(x)
+```
+Check that we get what we expect
+```{r}
+ggplot(x, aes(x, y)) + geom_point()
+```
+## K means Clustering
+```{r}
+km <- kmeans(x, 2)
+# centers equals the number of clusters
+# clustering vector (below) is assigning points to each cluster (i.e. cluster 1 and 2)
+# Within cluster sum of squares by cluster: how good algorithm is at assignment (read more) looking at difference between distance within vs between clusters (watch the videos for more detail!)
+```
+It's important to not just run the analysis but be able to get the important results back!
+
+Find the size of the clusters
+```{r}
+km$size
+# size = number of points in each cluster
+```
+Center of clusters
+```{r}
+km$centers
+```
+Where do I find the main result - the cluster assignment vector?
+```{r}
+km$cluster
+```
+Can we make a summary figure showing our result? With the points colored by cluster assignment and add cluster centers?
+```{r}
+plot(x, col = km$cluster)
+```
+The BIG PROBLEM with kmeans: you set the cluster #, so the output is somewhat self-determining
+
+One way to check the right number of clusters: try multiple cluster #, then for each k check the value of tot.withinss, plot as a function of k, this is called a **Scree Plot**
+
+Output of the scree plot: the "cliff face" or **inflection point** is the point that caused the most change (after which the tot.withinss doesn't drop much more it levels off)
+
+If the Scree plot is linear or doesnt drop off much then your data can't be classified well
+
+Ggplot version
+```{r}
+# set cluster as a factor variable
+km$cluster <- as.factor(km$cluster)
+# then plot
+ggplot(data = x) +  
+    aes(x = x, y =y, color = km$cluster) +
+    geom_point() + 
+    # geom_point(data = km$centers, aes(x = km$centers[,1], y = km$centers[,2])) + 
+    labs(title = "Points colored by k-means clustering")
+```
+How to plot the center points? 
+- When plotting from two separate dataframes, need the first data argument in ggplot to be empty, put the data inside the aesthetics
+- Also, make sure to make km$centers into its own dataframe
+```{r}
+centers <- data.frame(km$centers)
+ggplot(data = NULL) +
+    geom_point(data = x, aes(x = x, y = y, color = km$cluster)) +
+    geom_point(data = centers, aes(x = x, y = y), size = 4, alpha = 0.4) + 
+    labs(title = "Points clustered with centers labeled")
+```
+
+Making repeating vectors
+```{r}
+mycols <- rep("grey", 60)
+```
+
+```{r}
+plot(x, col = mycols)
+```
+
+## for loop in R
+Try out various numbers for k, 1-7. We will write a for-loop to do this for us and store relevant output. 
+
+```{r}
+totss <- NULL     # define empty output first
+k <- 1:7          # set k values to test
+for (i in k) {
+  # cat(i, "\n")    # print the current k value
+  totss <- c(totss, kmeans(x, centers = i)$tot.withinss)
+        # above runs kmeans, only saves tot.withinss values to the totss empty 
+}
+```
+
+Scree Plot
+```{r}
+plot(totss, typ = "o")
+```
+From Scree plot can see proper number of clusters is 2.
+
+## Hierarchical Clustering
+
+Starts with every point being in its own cluster. However we can't just give the function `hclust()` our input data `x` like we did for `kmeans()`. We need to first calculate a **distance matrix**. Can calculate this with the `dist()` function, by default will calculate Euclidean distance.
+
+Calculate distance matrix:
+```{r}
+d <- dist(x)
+head(d)
+```
+Use distance matrix for hierarchical clustering:
+```{r}
+hc <- hclust(d)
+hc
+```
+The print out isn't helpful but the plot method is useful. It makes a **dendrogram**.
+
+```{r}
+plot(hc) + 
+abline(h = 10, col = "red", lty = 2)
+# annotated the place where clustering will be done, resulting in 2 clusters
+```
+The numbers in the dendrogram are the rownames (helpful if your input data is genes in the future).
+
+The height coordinate on the graph corresponds to the Euclidean distance between the set of points. The biggest "goalposts" or vertical lines is the place where there is the biggest distance between 2 groups, likely indicates where a cluster should be. 
+
+**Don't** look at how close horizontally two numbers/rows are, that doesn't necessarily mean anything! check the height of the bars that is the indicator of distance. If you want to double check look at the distance matrix.
+
+To actually cluster the data by the red line in the graph above out of a hclust object, I can use the `cutree()`. Cutree returns a vector with the points annotated into clusters (the branches of the tree) resulting from a cut of that height.
+```{r}
+cutree(hc, h = 10)
+# can cut by h (height of red line) or k
+```
+You can also cutree by k (easier if there are tons of points)
+```{r}
+grps <- cutree(hc, k = 2)
+```
+
+Figure for cutree output
+```{r}
+grps <- as.factor(grps)
+ggplot(data = x) + 
+  aes(x = x, y = y, color = grps) + 
+  geom_point() + 
+  labs(title = "Points labeled by cutree() output")
+```
+
+## Principal Component Analysis
+
+Dimensional Reduction:
+
+On a PCA plot, the first PC (PC1) follows the "best fit" through the data. Principal components are new low dimensional axes closest to the observations. Once we find the line of best fit and the next line describing variation, we plot along these lines (not original dimensions). 
+
+The function is `prcomp()`. 
+
+### UK food data
+Importing data
+```{r}
+ukfood <- read.csv("https://bioboot.github.io/bggn213_f17/class-material/UK_foods.csv", header = TRUE, sep = ",", row.names = 1)
+# made sure to set row names to be the food categories not numbers
+```
+
+Get the number of dimensions:
+```{r}
+dim(ukfood)
+```
+```{r}
+View(ukfood)
+```
+
+Preview first 6 lines
+```{r}
+head(ukfood)
+```
+```{r}
+ukfood_tidy <- ukfood %>% pivot_longer(c(England, Wales, Scotland, N.Ireland), names_to = "region", values_to = "counts")
+
+#ggplot(data = ukfood_tidy) + 
+#  aes(x = rownames(ukfood_tidy), y = counts) + 
+#  geom_bar(aes(group = region, color = region))
+```
+### Running the PCA
+
+Don't for get to transpose the matrix! PCA needs this.
+```{r}
+pca <- prcomp(t(ukfood))
+summary(pca)
+```
+The second row **Proportion of Variance** tells you what proportion (%) of the variation is captured by the PC#.
+
+See all attributes of the dataset (PCA)
+```{r}
+attributes(pca)
+```
+"x" is what we want for plotting
+```{r}
+pca$x
+```
+
+Plotting PCA results: also called "score plot", "PCA plot"
+```{r}
+plot(pca$x[,1], pca$x[,2], xlab="PC1", ylab="PC2", xlim=c(-270,500))+
+text(pca$x[,1], pca$x[,2], colnames(ukfood))
+```
+Colored plot
+```{r}
+plot(pca$x[,1], pca$x[,2], xlab="PC1", ylab="PC2", xlim=c(-270,500)) +
+  text(pca$x[,1], pca$x[,2], colnames(ukfood), col = c("gold", "red", "blue", "green4")) 
+```
+
+Ggplot
+```{r}
+pca_ggplot <- data.frame(pca$x)
+ggplot(data = pca_ggplot) + 
+  aes(x = PC1, y = PC2) + 
+  geom_point(aes(color = rownames(pca_ggplot)), size = 3, alpha = 0.8)  
+  # scale_color_manual(names = c("England", "N.Ireland", "Scotland", "Wales"), values = rownames(pca_ggplot))
+```
+
+Finding the variation: Below we can use the square of `pca$sdev`, which stands for “standard deviation”, to calculate how much variation in the original data each PC accounts for
+
+```{r}
+v <- round( pca$sdev^2/sum(pca$sdev^2) * 100 )
+v
+```
+Can also see here: 
+```{r}
+z <- summary(pca)
+z$importance
+```
+
+Plot the variances (eigenvalues) with respect to the number of pc's (eigenvector number):
+```{r}
+barplot(v, xlab="Principal Component", ylab="Percent Variation")
+```
+
+### Variable Loadings
+
+See what % each original variable contributes to the new PCs. These are stored as `pca$rotation`.
+```{r}
+par(mar=c(10, 3, 0.35, 0))
+#
+barplot( pca$rotation[,1], las=2 )
+# plots the first column of pca$rotation
+```
+
+
+```{r, fig.width = 7, fig.height = 9}
+loadings <- as.data.frame(pca$rotation)
+ggplot(data = loadings) + 
+  aes(x = PC1, rownames(loadings)) + 
+  geom_col(aes(color = rownames(loadings), fill = rownames(loadings)), alpha = 0.6) + 
+  labs(title = "% contribution of each variable to PC1") + ylab("food") + xlab("% Contribution to PC1")
+```
+Bars with positive value on PC1 axis, mean N.ireland has **more** of that variable. Negative values mean N.ireland has **less**.
