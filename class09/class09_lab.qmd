@@ -1,0 +1,231 @@
+---
+title: "class09_lab"
+format: html
+toc: true
+---
+
+#PDB
+Presets and import data
+```{r}
+library(dplyr)
+library(ggplot2)
+theme_set(theme_bw())
+pdb_data_export <- read.csv("data_export_summary.csv")
+knitr::kable(pdb_data_export)
+# above makes table prettier
+```
+
+> Q1. What % of structures are solved by Xray and EM?
+
+```{r}
+# doesnt work: pdb_data_export$X.ray <- as.numeric(pdb_data_export$X.ray)
+
+# Xray structures in database
+n.xray <- sum(as.numeric( gsub(",", "", pdb_data_export$X.ray) ))
+```
+
+```{r}
+# EM structures in database
+n.EM <- sum(as.numeric( gsub(",", "", pdb_data_export$EM)))
+```
+
+```{r}
+n.total <- sum(as.numeric( gsub(",", "", pdb_data_export$Total)))
+```
+
+Lets make a function to automate counting the number of xray/EM structures:
+```{r}
+rm.comma <- function(x) {
+    sum(as.numeric( gsub(",", "", x) ) )
+}
+```
+
+Percent of Xray structures
+```{r}
+percent_xray_fun <- 100*rm.comma(pdb_data_export$X.ray)/rm.comma(pdb_data_export$Total)
+```
+
+`r percent_xray_fun` % of structures are solved by Xray.
+
+Percent of EM structures
+```{r}
+percent_EM_fun <- 100*rm.comma(pdb_data_export$EM)/rm.comma(pdb_data_export$Total)
+```
+
+`r percent_EM_fun` % of structures are solved by EM.
+
+> Q2. What proportion of structures in PDB are protein?
+
+```{r}
+n.total <- sum(as.numeric( gsub(",", "", pdb_data_export$Total)))
+prot_total <- as.numeric(gsub(",", "", pdb_data_export$Total[1]))
+percent_prot <- 100*prot_total/n.total
+```
+
+`r percent_prot` % of the PDB database are proteins.
+
+> Q3. How many HIV-1 protease sturctures are in PDB?
+
+There are >200,000 results searching for HIV-1 protease! 
+Don't search by text/name, much better to search by sequence/structure.
+
+# Mol* Viewer
+
+Here's the HIV-1 image
+
+![HIV-1 protease with inhibitor and important interactions highlighted.](1HSG.png)
+
+# Bio3D
+
+```{r}
+library(bio3d)
+```
+
+
+```{r}
+pdb <- read.pdb("1hsg")
+pdb
+```
+
+> Q7. How many residues?
+
+198 residues (from above readout).
+
+> Q8. Name one of the two non-protein residues?
+
+HOH
+
+> Q9. How many protein chains?
+
+There are two chains (chain A and chain B). 
+
+```{r}
+attributes(pdb)
+```
+Atoms
+```{r}
+head(pdb$atom)
+```
+Residue of the first atom:
+
+```{r}
+pdb$atom$resid[1]
+# or pdb$atom["resid"]
+```
+Convert residue to 1 letter code
+```{r}
+aa321(pdb$atom$resid[1])
+```
+
+## Predicting Functional Motions with Normal Mode Analysis (NMA)
+
+NMA predicts flexibility based on a static structure
+
+```{r}
+adk <- read.pdb("6s36")
+```
+
+```{r}
+m <- nma(adk)
+```
+
+```{r, fig.height = 6}
+plot(m)
+```
+
+The third plot (Fluctuations) has peaks that show the most flexible regions of the protein.
+
+### Display motion:
+
+```{r}
+mktrj(m, file="adk_m7.pdb")
+```
+
+# Comparitive Structure Analysis
+
+```{r, echo = FALSE, warning = FALSE}
+BiocManager::install("msa")
+```
+```{r}
+# devtools::install_bitbucket("Grantlab/bio3d-view")
+```
+```{r, echo = FALSE}
+library(msa)
+library(bio3d)
+```
+
+```{r}
+aa <- get.seq("1ake_A")
+```
+
+```{r}
+aa
+```
+> Q13. How many amino acids?
+
+214 amino acids. 
+
+### Search against pdb database for related structures:
+```{r}
+#b <- blast.pdb(aa)
+hits <- NULL
+hits$pdb.id <- c('1AKE_A','6S36_A','6RZE_A','3HPR_A','1E4V_A','5EJE_A','1E4Y_A','3X2S_A','6HAP_A','6HAM_A','4K46_A','3GMT_A','4PZL_A')
+```
+
+## Plot PDB Blast Hits:
+
+```{r}
+# hits <- plot.blast(b)
+```
+
+Plot showing similar results to BLAST search result in plots (E value, identity, length, etc). Notice -log(Evalue) is plotted, so the highest values (black points) are what we want. The output automatically shows a cutoff point (dashed line). 16 hits passed.
+
+### Our top hits
+```{r}
+hits$pdb.id
+```
+
+Downloading structures
+
+```{r, echo = FALSE}
+# make a new folder pdbs in the current working directory to contain the structure files
+files <- get.pdb(hits$pdb.id, path = "pdbs", split = TRUE, gzip = TRUE)
+```
+
+## Align and superposition
+
+```{r, echo = FALSE}
+pdbs <- pdbaln(files, fit = TRUE, exefile="msa")
+```
+
+Drawing it:
+```{r, fig.height = 9, fig.width = 11}
+# Vector containing PDB codes for figure axis
+ids <- basename.pdb(pdbs$id)
+
+# Draw schematic alignment
+plot(pdbs, labels=ids)
+```
+
+## Do PCA
+
+```{r}
+pc.xray <- pca(pdbs)
+plot(pc.xray)
+```
+
+## Trajectory Animation
+
+```{r}
+rd <- rmsd(pdbs)
+hc.rd <- hclust(dist(rd))
+grps.rd <- cutree(hc.rd, k = 3)
+plot(pc.xray, 1:2, col="grey50", bg=grps.rd, pch=21, cex=1)
+```
+
+Visualize first PC
+```{r}
+pc1 <- mktrj(pc.xray, pc=1, file="pc_1.pdb")
+```
+
+Load the output on Mol*. The resulting animation has a dotted line in one portion representing some sequence that is missing in one of the models. Mol* doesn't just want to guess/average based on the other structures, so it puts a dotted line instead.
