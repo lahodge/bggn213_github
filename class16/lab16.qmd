@@ -1,0 +1,128 @@
+---
+title: "lab16"
+format: html
+---
+
+```{r}
+library(tximport)
+```
+
+## Setup
+```{r}
+# setup the folder and filenames to read
+folders <- dir(pattern="SRR21568*")
+samples <- sub("_quant", "", folders)
+files <- file.path( folders, "abundance.h5" )
+names(files) <- samples
+```
+
+```{r}
+txi.kallisto <- tximport(files, type = "kallisto", txOut = TRUE)
+```
+
+```{r}
+head(txi.kallisto$counts)
+```
+
+```{r}
+colSums(txi.kallisto$counts)
+```
+```{r}
+sum(rowSums(txi.kallisto$counts)>0)
+```
+Keep rows with counts over 0
+
+```{r}
+to.keep <- rowSums(txi.kallisto$counts) > 0
+kset.nonzero <- txi.kallisto$counts[to.keep,]
+```
+
+```{r}
+keep2 <- apply(kset.nonzero,1,sd)>0
+x <- kset.nonzero[keep2,]
+```
+
+# PCA
+
+PCA (don't forget to transpose!)
+```{r}
+pca <- prcomp(t(x), scale=TRUE)
+summary(pca)
+```
+
+```{r}
+plot(pca$x[,1], pca$x[,2],
+     col=c("blue","blue","red","red"),
+     xlab="PC1", ylab="PC2", pch=16)
+```
+
+GGplot code
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+
+colData <- data.frame(condition = factor(rep(c("control", "treatment"), each = 2)))
+rownames(colData) <- colnames(txi.kallisto$counts)
+
+pca_results <- as.data.frame(pca$x)
+pca_results$condition <- as.factor(colData$condition)
+
+ggplot(data = pca_results) + 
+  aes(x = PC1, y = PC2, group = condition, color = condition) + 
+  geom_point() + 
+  geom_text_repel(label = rownames(pca_results)) +
+  labs(title = "PCA Results for PC1 vs PC2") + 
+  theme_bw()
+```
+
+PC2 vs PC3
+```{r}
+ggplot(data = pca_results) + 
+  aes(x = PC2, y = PC3, group = condition, color = condition) + 
+  geom_point() + 
+  geom_text_repel(label = rownames(pca_results)) +
+  labs(title = "PCA Results for PC2 vs PC3") + 
+  theme_bw()
+```
+PC1 vs PC3
+
+```{r}
+ggplot(data = pca_results) + 
+  aes(x = PC1, y = PC3, group = condition, color = condition) + 
+  geom_point() + 
+  geom_text_repel(label = rownames(pca_results)) +
+  labs(title = "PCA Results for PC1 vs PC3") + 
+  theme_bw()
+```
+
+
+# DESeq2
+
+```{r, warning = FALSE}
+library(DESeq2)
+```
+## Prepping 
+
+```{r}
+sampleTable <- data.frame(condition = factor(rep(c("control", "treatment"), each = 2)))
+rownames(sampleTable) <- colnames(txi.kallisto$counts)
+```
+
+## Running DESeq2: 
+
+```{r}
+dds <- DESeqDataSetFromTximport(txi.kallisto, sampleTable,  ~condition)
+```
+```{r}
+dds <- DESeq(dds)
+```
+
+```{r}
+deseq_results <- results(dds)
+```
+
+```{r}
+head(deseq_results)
+```
+
