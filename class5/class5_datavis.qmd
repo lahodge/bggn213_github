@@ -1,6 +1,6 @@
 ---
 title: "Class5: Data Vis"
-format: html
+format: gfm
 toc: true
 theme: cosmo
 ---

@@ -1,6 +1,6 @@
 ---
 title: "class17"
-format: pdf
+format: gfm
 toc: true
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: "class12_report"
-format: html
+format: gfm
 ---
 
 ```{r, warning = FALSE}
