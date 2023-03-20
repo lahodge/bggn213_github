@@ -1,0 +1,220 @@
+---
+title: "lab13"
+format: pdf
+toc: true
+---
+
+# setup
+
+```{r}
+#| message = FALSE
+library(DESeq2)
+library(ggplot2)
+library(gage)
+library(gageData)
+library(pathview)
+theme_set(theme_bw())
+```
+
+# Read the countData and colData
+
+```{r}
+countData <- read.csv("GSE37704_featurecounts.csv", sep = ",", row.names = 1)
+
+colData <- read.csv("GSE37704_metadata.csv", row.names = 1)
+```
+
+> Q. Do they match?
+
+No they dont.
+
+
+```{r}
+row.names(colData)
+```
+```{r}
+head(countData)
+```
+
+Need to get rid of the length column, will mess up Deseq analysis
+
+```{r}
+countData <- countData[,- 1]
+# countData[, colData$id] this is a better way
+head(countData)
+```
+```{r}
+all(colnames(countData) == colData$id)
+```
+
+> Q. Remove zero count genes
+
+```{r}
+# rowSums(countData[]) sums each row and prints the rowname with the sum
+# rowSums(countData[]) > 0 creates a logical vector with all the rownames, with TRUE if the sum is >0 and FALSE if not
+# wrapping in countData[logical vector,] gives the dataframe with rows that fufill the logical vector
+counts <- countData[rowSums(countData[]) >0,]
+head(counts)
+```
+
+> Q. How many genes left?
+
+```{r}
+nrow(counts)
+```
+
+# PCA as Quality control
+
+BaseR is `prcomp()` function which often needs the data to be transposed and scaled.
+
+```{r}
+pca <- prcomp(t(counts), scale = TRUE)
+```
+
+
+Plot
+
+```{r}
+x <- as.data.frame(pca$x) # get in data frame format
+ggplot(data = x) +
+  aes(x = PC1, y = PC2, group = colData$condition, color = colData$condition) + 
+  geom_point() + 
+  labs(title = "PCA of Hoxa1 KD")
+```
+
+
+> Q. How much variance captured in 2 PCs?
+
+Summary of PCA
+```{r}
+summary(pca)
+```
+81.82% of variance captured by two PCs.
+
+
+# DESEQ analysis
+
+```{r}
+library(DESeq2)
+dds <- DESeqDataSetFromMatrix(countData = counts, colData = colData, design = ~condition)
+
+dds <- DESeq(dds)
+
+results <- results(dds)
+head(results)
+```
+
+# Summary plot
+
+Plot the genes
+
+```{r, fig.height = 7}
+library(EnhancedVolcano)
+results <- as.data.frame(results)
+EnhancedVolcano(results, lab = rownames(results), x = "log2FoldChange", y = "padj")
+```
+
+in base R with colors
+
+```{r}
+mycols <- rep("gray", nrow(results))
+mycols[abs(results$log2FoldChange) > 2]  <- "red" 
+
+inds <- (results$padj < 0.01) & (abs(results$log2FoldChange) > 2 )
+mycols[inds] <- "blue"
+plot( results$log2FoldChange, -log(results$padj), col=mycols, ylab="-Log(P-value)", xlab="Log2(FoldChange)" ) + abline(v=c(-2,2), col="gray", lty=2) + abline(h=-log(0.1), col="gray", lty=2)
+```
+
+
+# Add annotations
+
+```{r}
+library(org.Hs.eg.db)
+columns(org.Hs.eg.db)
+```
+
+use mapIds to add gene symbols, entrez ID
+
+```{r}
+# add gene symbol
+results$symbol <- mapIds(org.Hs.eg.db, keys = row.names(results), column = "SYMBOL", keytype = "ENSEMBL")
+head(results$symbol)
+
+# add entrezid
+results$entrez <- mapIds(org.Hs.eg.db, keys = row.names(results), column = "ENTREZID", keytype = "ENSEMBL")
+head(results)
+
+```
+
+New volcano:
+
+```{r, fig.height = 7}
+library(EnhancedVolcano)
+results <- as.data.frame(results)
+EnhancedVolcano(results, lab = results$symbol, x = "log2FoldChange", y = "padj")
+```
+
+# Pathway analysis
+
+Create the input for gage() - a vector of fold changes with entrez IDs as the names
+
+```{r}
+foldchange <- results$log2FoldChange
+names(foldchange) <- results$entrez
+```
+
+```{r}
+data(kegg.sets.hs)
+keggres <- gage(foldchange, gsets = kegg.sets.hs)
+head(keggres$less)
+```
+
+Look at the pathways:
+
+```{r}
+pathview(gene.data = foldchange, pathway.id = "hsa04110")
+```
+Insert image:
+
+?[](hsa04110.pathview.png)
+
+## GO pathways
+
+```{r}
+data(go.sets.hs)
+data(go.subs.hs)
+```
+
+```{r}
+ # the biological subprocess of go is selected with go.subs.hs$BP
+gobpsets = go.sets.hs[go.subs.hs$BP]
+ # gene sets
+gobpres = gage(foldchange, gsets=gobpsets, same.dir=TRUE)
+ # results from gage changing genes overlapping with the gene sets
+lapply(gobpres, head)
+```
+
+Check GO codes for how they got the annotation, is it verified by experiment or computationally inferred??
+
+## Reactome
+
+```{r}
+sig_genes <- results[results$padj <= 0.05 & !is.na(results$padj), "symbol"]
+# reactome uses gene symbol, not entrez id
+
+print(paste("Total number of significant genes:", length(sig_genes)))
+```
+
+```{r}
+# write out text file for reactome to take
+write.table(sig_genes, file="significant_genes.txt", row.names=FALSE, col.names=FALSE, quote=FALSE)
+```
+
+From Reactome browser: 
+
+> Q: What pathway has the most significant “Entities p-value”? Do the most significant pathways listed match your previous KEGG results? What factors could cause differences between the two methods?
+
+Endosomal/Vacuolar pathway
+
+Not all the pathways match. Both methods give cell cycle-related processes as a significant result. Each method uses different methods of annotating genes and verifying which gene belongs to which pathway.
+
